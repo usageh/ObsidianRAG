@@ -1,0 +1,28 @@
+[project]
+name = "obsidian-rag"
+version = "0.1.0"
+description = "基于 Obsidian 笔记的个人知识库 RAG 系统"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.55.0",
+    "numpy",
+    "watchdog",
+    "pystray",
+    "pillow",
+    "mss",
+    "keyboard",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-dotenv",
+    "pydantic-settings",
+    "fsrs>=4.0.0",
+    "markdown-it-py",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

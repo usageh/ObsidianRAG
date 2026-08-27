@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Obsidian 知识库问答</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      margin: 0; padding: 0;
+      background: #f5f5f7; color: #1d1d1f; line-height: 1.6;
+    }
+    .container { max-width: 820px; margin: 0 auto; padding: 32px 20px 64px; }
+    .nav { background: #fff; border-bottom: 1px solid #e3e3e8; padding: 10px 16px; border-radius: 10px; margin-bottom: 18px; }
+    .nav a { color: #0071e3; text-decoration: none; margin-right: 16px; font-size: 14px; }
+    .nav a.cur { color: #1d1d1f; font-weight: 600; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .subtitle { color: #6e6e73; font-size: 14px; margin-bottom: 24px; }
+    .ask-box {
+      display: flex; gap: 10px; background: #fff; padding: 14px;
+      border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    #question {
+      flex: 1; border: 1px solid #d2d2d7; border-radius: 8px;
+      padding: 10px 12px; font-size: 15px; outline: none;
+    }
+    #question:focus { border-color: #0071e3; }
+    #ask-btn {
+      border: none; background: #0071e3; color: #fff; font-size: 15px;
+      padding: 10px 22px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    }
+    #ask-btn:disabled { background: #a0c4ec; cursor: not-allowed; }
+    .status { color: #6e6e73; font-size: 13px; margin: 14px 2px; min-height: 18px; }
+    .answer-card {
+      background: #fff; border-radius: 12px; padding: 20px 22px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-top: 8px;
+    }
+    .answer-card h2 { font-size: 16px; margin: 0 0 10px; color: #1d1d1f; }
+    #answer { white-space: pre-wrap; font-size: 15px; }
+    .sources { margin-top: 18px; border-top: 1px solid #ececee; padding-top: 14px; }
+    .sources h3 { font-size: 13px; color: #6e6e73; margin: 0 0 8px; font-weight: 600; }
+    .source-item {
+      font-size: 14px; padding: 6px 0; border-bottom: 1px solid #f2f2f4;
+      display: flex; justify-content: space-between; gap: 12px;
+    }
+    .source-item:last-child { border-bottom: none; }
+    .source-title { color: #0071e3; }
+    .source-path { color: #86868b; font-size: 12px; word-break: break-all; }
+    .source-score { color: #86868b; font-size: 12px; white-space: nowrap; }
+    .group { margin-bottom: 14px; }
+    .group-head { font-size: 14px; font-weight: 600; color: #1d1d1f; }
+    .group-sum { color: #6e6e73; font-size: 13px; margin: 2px 0 6px; }
+    .hidden { display: none; }
+    .error { color: #c0392b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/" class="cur">问答</a>
+      <a href="/review.html">抽问复习</a>
+      <a href="/quiz.html">主动测验</a>
+      <a href="/graph.html">知识图谱</a>
+    </div>
+    <h1>Obsidian 知识库问答</h1>
+    <div class="subtitle">基于本地笔记检索的回答, 附来源引用</div>
+
+    <div class="ask-box">
+      <input id="question" type="text" placeholder="输入你的问题, 回车提问..."
+             autocomplete="off" />
+      <button id="ask-btn">提问</button>
+    </div>
+    <div id="status" class="status"></div>
+
+    <div id="result" class="answer-card hidden">
+      <h2>回答</h2>
+      <div id="answer"></div>
+      <div id="sources-wrap" class="sources hidden">
+        <h3>来源</h3>
+        <div id="sources"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $q = document.getElementById('question');
+    const $btn = document.getElementById('ask-btn');
+    const $status = document.getElementById('status');
+    const $result = document.getElementById('result');
+    const $answer = document.getElementById('answer');
+    const $sourcesWrap = document.getElementById('sources-wrap');
+    const $sources = document.getElementById('sources');
+
+    async function ask() {
+      const question = $q.value.trim();
+      if (!question) return;
+      $btn.disabled = true;
+      $status.textContent = '检索笔记并生成回答中...';
+      $status.className = 'status';
+      $result.classList.add('hidden');
+      try {
+        const resp = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: question }),
+        });
+        if (!resp.ok) throw new Error('请求失败: ' + resp.status);
+        const data = await resp.json();
+        render(data);
+        $status.textContent = '';
+      } catch (e) {
+        $status.textContent = '出错: ' + e.message;
+        $status.className = 'status error';
+      } finally {
+        $btn.disabled = false;
+      }
+    }
+
+    function render(data) {
+      $answer.textContent = data.answer || '';
+      // 来源: 优先展示同主题分组视图, 兼容旧版平铺 sources
+      const groups = data.groups || [];
+      $sources.innerHTML = '';
+      if (groups.length === 0) {
+        $sourcesWrap.classList.add('hidden');
+      } else {
+        groups.forEach(function (g) {
+          const wrap = document.createElement('div');
+          wrap.className = 'group';
+          if (g.type === 'merged') {
+            const head = document.createElement('div');
+            head.className = 'group-head';
+            head.textContent = g.topic + ' (' + g.notes.length + ')';
+            wrap.appendChild(head);
+            if (g.summary) {
+              const sum = document.createElement('div');
+              sum.className = 'group-sum';
+              sum.textContent = g.summary;
+              wrap.appendChild(sum);
+            }
+            g.notes.forEach(function (s) { wrap.appendChild(sourceRow(s)); });
+          } else {
+            wrap.appendChild(sourceRow(g));
+          }
+          $sources.appendChild(wrap);
+        });
+        $sourcesWrap.classList.remove('hidden');
+      }
+      $result.classList.remove('hidden');
+    }
+
+    function sourceRow(s) {
+      const row = document.createElement('div');
+      row.className = 'source-item';
+      const left = document.createElement('div');
+      const t = document.createElement('div');
+      t.className = 'source-title';
+      t.textContent = s.title || s.path || '(无标题)';
+      const p = document.createElement('div');
+      p.className = 'source-path';
+      p.textContent = s.path;
+      left.appendChild(t);
+      left.appendChild(p);
+      const sc = document.createElement('div');
+      sc.className = 'source-score';
+      sc.textContent = (s.score != null ? s.score : '');
+      row.appendChild(left);
+      row.appendChild(sc);
+      return row;
+    }
+
+    $btn.addEventListener('click', ask);
+    $q.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') ask();
+    });
+    // 支持 ?q= 预填问题(知识图谱点击节点跳转过来)
+    const preQ = new URLSearchParams(location.search).get('q');
+    if (preQ) {
+      $q.value = preQ;
+      ask();
+    } else {
+      $q.focus();
+    }
+  </script>
+</body>
+</html>

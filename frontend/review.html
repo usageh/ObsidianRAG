@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>抽问复习 - Obsidian RAG</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      margin: 0; background: #f5f5f7; color: #1d1d1f; line-height: 1.6; }
+    .nav { background: #fff; border-bottom: 1px solid #e3e3e8; padding: 10px 20px; }
+    .nav a { color: #0071e3; text-decoration: none; margin-right: 16px; font-size: 14px; }
+    .nav a.cur { color: #1d1d1f; font-weight: 600; }
+    .container { max-width: 760px; margin: 0 auto; padding: 24px 20px 64px; }
+    .gen-box { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 20px; }
+    .gen-box h2 { font-size: 15px; margin: 0 0 8px; }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; border: 1px solid #d2d2d7; border-radius: 8px; padding: 8px 10px; font-size: 14px; outline: none; }
+    .row input:focus { border-color: #0071e3; }
+    button { border: none; background: #0071e3; color: #fff; font-size: 14px; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    button:disabled { background: #a0c4ec; cursor: not-allowed; }
+    .card { background: #fff; border-radius: 12px; padding: 28px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); min-height: 240px; display: flex; flex-direction: column; }
+    .q-label { color: #6e6e73; font-size: 13px; margin-bottom: 8px; }
+    .question { font-size: 18px; font-weight: 500; margin-bottom: 20px; }
+    .answer { color: #1d1d1f; font-size: 15px; white-space: pre-wrap; padding: 16px; background: #f0f5ff; border-radius: 8px; }
+    .meta { color: #86868b; font-size: 12px; margin-top: 12px; }
+    .rates { display: flex; gap: 10px; margin-top: 20px; }
+    .rates button { flex: 1; }
+    .r-again { background: #d93025; } .r-hard { background: #f9ab00; } .r-good { background: #1e8e3e; } .r-easy { background: #0071e3; }
+    .empty { text-align: center; color: #6e6e73; padding: 60px 0; }
+    .status { color: #6e6e73; font-size: 13px; margin: 10px 2px; min-height: 18px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/">问答</a>
+    <a href="/review.html" class="cur">抽问复习</a>
+    <a href="/quiz.html">主动测验</a>
+    <a href="/graph.html">知识图谱</a>
+  </div>
+  <div class="container">
+    <div class="gen-box">
+      <h2>从笔记生成复习卡片</h2>
+      <div class="row">
+        <input id="note-path" placeholder="笔记路径, 如 BM25.md" />
+        <input id="topic-id" placeholder="主题 id(可选)" style="max-width:140px" />
+        <button id="gen-btn">生成</button>
+      </div>
+      <div id="gen-status" class="status"></div>
+    </div>
+
+    <div id="card-area">
+      <div id="empty" class="empty">没有到期卡片。先生成卡片, 或稍后再来。</div>
+      <div id="card" class="card hidden">
+        <div class="q-label">问题</div>
+        <div id="question" class="question"></div>
+        <button id="reveal-btn">显示答案</button>
+        <div id="answer" class="answer hidden"></div>
+        <div id="meta" class="meta"></div>
+        <div id="rates" class="rates hidden">
+          <button class="r-again" data-r="1">掌握差 (Again)</button>
+          <button class="r-hard" data-r="2">吃力 (Hard)</button>
+          <button class="r-good" data-r="3">良好 (Good)</button>
+          <button class="r-easy" data-r="4">简单 (Easy)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const $empty = document.getElementById('empty');
+    const $card = document.getElementById('card');
+    const $q = document.getElementById('question');
+    const $a = document.getElementById('answer');
+    const $meta = document.getElementById('meta');
+    const $reveal = document.getElementById('reveal-btn');
+    const $rates = document.getElementById('rates');
+    const $status = document.querySelector('#card-area .status') || document.createElement('div');
+    let queue = [];
+    let current = null;
+
+    async function loadDue() {
+      const r = await fetch('/api/cards/due');
+      const d = await r.json();
+      queue = d.cards || [];
+      showNext();
+    }
+
+    function showNext() {
+      if (queue.length === 0) {
+        $card.classList.add('hidden');
+        $empty.classList.remove('hidden');
+        return;
+      }
+      $empty.classList.add('hidden');
+      $card.classList.remove('hidden');
+      current = queue[0];
+      $q.textContent = current.question;
+      $a.textContent = current.answer || '';
+      $a.classList.add('hidden');
+      $rates.classList.add('hidden');
+      $reveal.classList.remove('hidden');
+      $meta.textContent = '来源: ' + (current.note_path || '') + (current.topic_id ? '  主题: ' + current.topic_id : '');
+    }
+
+    $reveal.addEventListener('click', function () {
+      $reveal.classList.add('hidden');
+      $a.classList.remove('hidden');
+      $rates.classList.remove('hidden');
+    });
+
+    $rates.addEventListener('click', async function (e) {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const rating = parseInt(b.dataset.r, 10);
+      const r = await fetch('/api/cards/review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card_id: current.card_id, rating: rating }),
+      });
+      const d = await r.json();
+      queue.shift();
+      showNext();
+    });
+
+    // 生成卡片
+    document.getElementById('gen-btn').addEventListener('click', async function () {
+      const notePath = document.getElementById('note-path').value.trim();
+      const topicId = document.getElementById('topic-id').value.trim();
+      const $gs = document.getElementById('gen-status');
+      if (!notePath) return;
+      this.disabled = true;
+      $gs.textContent = '生成中...';
+      try {
+        const r = await fetch('/api/cards/generate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note_path: notePath, topic_id: topicId, n: 3 }),
+        });
+        const d = await r.json();
+        $gs.textContent = '已生成 ' + d.count + ' 张卡片';
+        await loadDue();
+      } catch (e) { $gs.textContent = '出错: ' + e.message; }
+      finally { this.disabled = false; }
+    });
+
+    loadDue();
+  </script>
+</body>
+</html>

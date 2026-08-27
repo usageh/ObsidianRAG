@@ -1,0 +1,28 @@
+# 大模型调用 (AGICTO 兼容 OpenAI 格式)
+openai>=1.55.0
+
+# 向量检索 (纯 Python, 绕过 pyarrow DLL 策略)
+numpy
+
+# Obsidian vault 增量监听
+watchdog
+
+# 截图与系统托盘
+pystray
+pillow
+mss
+keyboard
+
+# Web 服务
+fastapi
+uvicorn[standard]
+
+# 配置加载
+python-dotenv
+pydantic-settings
+
+# 间隔重复算法
+fsrs>=4.0.0
+
+# markdown 解析
+markdown-it-py
